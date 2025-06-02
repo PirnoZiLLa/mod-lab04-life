@@ -1,0 +1,5 @@
+Glider
+Moving
+010
+001
+111
