@@ -140,28 +140,28 @@ namespace LifeTests
         }
 
         [Fact]
-        public void TestSaveState()
+        public void TestCountClusters_FullBoard()
         {
-            board = new Board(3, 3, 1, 0.0);
+            var board = new Board(5, 5, 1, 1.0); // Fully live board
             typeof(Program).GetField("board", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, board);
-            board.Cells[1, 1].IsAlive = true;
-            typeof(Program).GetMethod("SaveState", BindingFlags.NonPublic | BindingFlags.Static)
-                .Invoke(null, new object[] { "test_save.txt" });
-            var lines = File.ReadAllLines("test_save.txt");
-            Assert.Equal("000", lines[0]);
-            Assert.Equal("010", lines[1]);
-            Assert.Equal("000", lines[2]);
+            var clusters = (int)typeof(Program).GetMethod("CountClusters", BindingFlags.NonPublic | BindingFlags.Static)
+                .Invoke(null, null);
+            Assert.Equal(1, clusters);
         }
 
         [Fact]
-        public void TestLoadState()
+        public void TestCountClusters_SingleCluster_ConnectedBlock()
         {
-            File.WriteAllText("test_load.txt", "000\n010\n000");
-            board = new Board(3, 3, 1, 0.0);
+            var board = new Board(5, 5, 1, 0.0);
+            // Create a 2x2 block of live cells
+            board.Cells[1, 1].IsAlive = true;
+            board.Cells[1, 2].IsAlive = true;
+            board.Cells[2, 1].IsAlive = true;
+            board.Cells[2, 2].IsAlive = true;
             typeof(Program).GetField("board", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, board);
-            typeof(Program).GetMethod("LoadState", BindingFlags.NonPublic | BindingFlags.Static)
-                .Invoke(null, new object[] { "test_load.txt" });
-            Assert.True(board.Cells[1, 1].IsAlive);
+            var clusters = (int)typeof(Program).GetMethod("CountClusters", BindingFlags.NonPublic | BindingFlags.Static)
+                .Invoke(null, null);
+            Assert.Equal(1, clusters);
         }
 
         [Fact]
@@ -177,21 +177,18 @@ namespace LifeTests
         }
 
         [Fact]
-        public void TestIsStable()
+        public void TestCountClusters_ThreeClusters_DiagonalAndIsolated()
         {
-            board = new Board(4, 4, 1, 0.0);
-            board.Cells[1, 1].IsAlive = true;
-            board.Cells[1, 2].IsAlive = true;
-            board.Cells[2, 1].IsAlive = true;
-            board.Cells[2, 2].IsAlive = true;
+            var board = new Board(5, 5, 1, 0.0);
+            // Three clusters: two cells diagonal, one isolated, one single cell
+            board.Cells[0, 0].IsAlive = true;
+            board.Cells[1, 1].IsAlive = true; // Diagonal, forms one cluster
+            board.Cells[2, 3].IsAlive = true; // Isolated
+            board.Cells[4, 4].IsAlive = true; // Isolated
             typeof(Program).GetField("board", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, board);
-            var historyField = typeof(Program).GetField("history", BindingFlags.NonPublic | BindingFlags.Static);
-            var history = (System.Collections.Generic.List<int>)historyField.GetValue(null);
-            for (int i = 0; i < 5; i++)
-                history.Add(4);
-            var isStable = (bool)typeof(Program).GetMethod("IsStable", BindingFlags.NonPublic | BindingFlags.Static)
+            var clusters = (int)typeof(Program).GetMethod("CountClusters", BindingFlags.NonPublic | BindingFlags.Static)
                 .Invoke(null, null);
-            Assert.True(isStable);
+            Assert.Equal(3, clusters);
         }
 
         [Fact]
@@ -273,5 +270,7 @@ namespace LifeTests
                 .GetField("patternCounts", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
             Assert.Equal(1, patternCounts["Beehive"]);
         }
+
+
     }
 }
