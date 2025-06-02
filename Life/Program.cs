@@ -113,7 +113,7 @@ namespace cli_life
         static Board board;
         static int generation = 0;
         static List<int> history = new List<int>();
-        const int stableLimit = 5;
+        const int stableLimit = 10; // Увеличено для предотвращения ранней стабилизации
         static List<Pattern> patterns = new List<Pattern>();
         static Dictionary<string, int> patternCounts = new Dictionary<string, int>();
         static List<double> densityResults = new List<double>();
@@ -121,30 +121,61 @@ namespace cli_life
 
         static Config LoadConfig(string path)
         {
-            string json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<Config>(json);
-        }
-
-        static void SaveState(string path)
-        {
-            var sb = new StringBuilder();
-            for (int y = 0; y < board.Rows; y++)
+            try
             {
-                for (int x = 0; x < board.Columns; x++)
-                {
-                    sb.Append(board.Cells[x, y].IsAlive ? '1' : '0');
-                }
-                sb.AppendLine();
+                string json = File.ReadAllText(path);
+                return JsonSerializer.Deserialize<Config>(json);
             }
-            File.WriteAllText(path, sb.ToString());
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка загрузки конфигурации из {path}: {ex.Message}");
+                return new Config { width = 50, height = 20, cellSize = 1, liveDensity = 0.1 };
+            }
         }
 
-        static void LoadState(string path)
+        static void SaveState(string filename)
         {
-            var lines = File.ReadAllLines(path);
-            for (int y = 0; y < board.Rows && y < lines.Length; y++)
-                for (int x = 0; x < board.Columns && x < lines[y].Length; x++)
-                    board.Cells[x, y].IsAlive = lines[y][x] == '1';
+            string path = Path.Combine(GetProjectDirectory(), filename);
+            try
+            {
+                var sb = new StringBuilder();
+                for (int y = 0; y < board.Rows; y++)
+                {
+                    for (int x = 0; x < board.Columns; x++)
+                    {
+                        sb.Append(board.Cells[x, y].IsAlive ? '1' : '0');
+                    }
+                    sb.AppendLine();
+                }
+                File.WriteAllText(path, sb.ToString());
+                Console.WriteLine($"Состояние сохранено в {path}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка сохранения состояния в {path}: {ex.Message}");
+            }
+        }
+
+        static void LoadState(string filename)
+        {
+            string path = Path.Combine(GetProjectDirectory(), filename);
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    Console.WriteLine($"Файл {path} не найден");
+                    return;
+                }
+                var lines = File.ReadAllLines(path);
+                for (int y = 0; y < board.Rows && y < lines.Length; y++)
+                    for (int x = 0; x < board.Columns && x < lines[y].Length; x++)
+                        board.Cells[x, y].IsAlive = lines[y][x] == '1';
+                Console.WriteLine($"Состояние загружено из {path}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка загрузки состояния из {path}: {ex.Message}");
+            }
         }
 
         static int CountAlive()
@@ -163,42 +194,62 @@ namespace cli_life
 
         static void InitializePatterns()
         {
-            patterns.Add(new Pattern
+            string patternsDir = Path.Combine(GetProjectDirectory(), "Patterns");
+            if (!Directory.Exists(patternsDir))
             {
-                Name = "Block",
-                Type = "Stable",
-                Shape = new bool[,] { { true, true }, { true, true } }
-            });
-            patterns.Add(new Pattern
+                Directory.CreateDirectory(patternsDir);
+                CreateDefaultPatternFiles(patternsDir);
+            }
+
+            foreach (var file in Directory.GetFiles(patternsDir, "*.txt"))
             {
-                Name = "Beehive",
-                Type = "Stable",
-                Shape = new bool[,] { { false, true, true, false }, { true, false, false, true }, { false, true, true, false } }
-            });
-            patterns.Add(new Pattern
-            {
-                Name = "Blinker",
-                Type = "Periodic",
-                Shape = new bool[,] { { true, true, true } }
-            });
-            patterns.Add(new Pattern
-            {
-                Name = "Glider",
-                Type = "Moving",
-                Shape = new bool[,] { { false, true, false }, { false, false, true }, { true, true, true } }
-            });
-            patterns.Add(new Pattern
-            {
-                Name = "Toad",
-                Type = "Periodic",
-                Shape = new bool[,] { { false, true, true, true }, { true, true, true, false } }
-            });
-            patterns.Add(new Pattern
-            {
-                Name = "Eater",
-                Type = "Eater",
-                Shape = new bool[,] { { true, true, false, false }, { true, false, true, false }, { false, false, true, true } }
-            });
+                try
+                {
+                    var lines = File.ReadAllLines(file);
+                    if (lines.Length < 3) continue;
+
+                    string name = lines[0];
+                    string type = lines[1];
+                    bool[,] shape = new bool[lines.Length - 2, lines[2].Length];
+
+                    for (int i = 2; i < lines.Length; i++)
+                    {
+                        for (int j = 0; j < lines[i].Length; j++)
+                        {
+                            shape[i - 2, j] = lines[i][j] == '1';
+                        }
+                    }
+
+                    patterns.Add(new Pattern
+                    {
+                        Name = name,
+                        Type = type,
+                        Shape = shape
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка загрузки паттерна из {file}: {ex.Message}");
+                }
+            }
+        }
+
+        static void CreateDefaultPatternFiles(string patternsDir)
+        {
+            File.WriteAllText(Path.Combine(patternsDir, "block.txt"),
+                "Block\nStable\n11\n11");
+            File.WriteAllText(Path.Combine(patternsDir, "beehive.txt"),
+                "Beehive\nStable\n0110\n1001\n0110");
+            File.WriteAllText(Path.Combine(patternsDir, "blinker.txt"),
+                "Blinker\nPeriodic\n111");
+            File.WriteAllText(Path.Combine(patternsDir, "glider.txt"),
+                "Glider\nMoving\n010\n001\n111");
+            File.WriteAllText(Path.Combine(patternsDir, "toad.txt"),
+                "Toad\nPeriodic\n0111\n1110");
+            File.WriteAllText(Path.Combine(patternsDir, "eater.txt"),
+                "Eater\nEater\n1100\n1010\n0011");
+            File.WriteAllText(Path.Combine(patternsDir, "ellipse.txt"),
+                "Ellipse\nStable\n01110\n10001\n10001\n10001\n01110");
         }
 
         static void AnalyzePatterns()
@@ -269,21 +320,33 @@ namespace cli_life
 
         static void GeneratePlot()
         {
+            string plotPath = Path.Combine(GetProjectDirectory(), "plot.png");
+            Console.WriteLine($"Сохранение графика в: {plotPath}");
             int width = 800, height = 600;
             using (Bitmap bmp = new Bitmap(width, height))
             using (Graphics g = Graphics.FromImage(bmp))
             {
                 g.Clear(Color.White);
                 Font font = new Font("Arial", 10);
-                Pen pen = new Pen(Color.Black, 2);
+                Pen[] pens = new Pen[]
+                {
+                    new Pen(Color.Blue, 2),
+                    new Pen(Color.Red, 2),
+                    new Pen(Color.Green, 2),
+                    new Pen(Color.Purple, 2),
+                    new Pen(Color.Orange, 2),
+                    new Pen(Color.Cyan, 2),
+                    new Pen(Color.Magenta, 2)
+                };
                 int margin = 50;
-                int maxGen = generation;
-                int maxAlive = history.Any() ? history.Max() : 1;
+                int maxGen = 1000;
+                int maxAlive = history.Any() && history.Max() > 0 ? history.Max() : 1;
+                Console.WriteLine($"maxAlive: {maxAlive}");
 
-                g.DrawLine(pen, margin, height - margin, width - margin, height - margin);
-                g.DrawLine(pen, margin, height - margin, margin, margin);
-                g.DrawString("Generation", font, Brushes.Black, width / 2, height - margin + 10);
-                g.DrawString("Alive Cells", font, Brushes.Black, 10, 10);
+                g.DrawLine(new Pen(Color.Black, 2), margin, height - margin, width - margin, height - margin);
+                g.DrawLine(new Pen(Color.Black, 2), margin, height - margin, margin, margin);
+                g.DrawString("Поколение", font, Brushes.Black, width / 2, height - margin + 10);
+                g.DrawString("Живые клетки", font, Brushes.Black, 10, 10);
 
                 for (int i = 0; i <= 5; i++)
                 {
@@ -293,16 +356,61 @@ namespace cli_life
                     g.DrawString((maxAlive * i / 5).ToString(), font, Brushes.Black, 10, y - 10);
                 }
 
-                for (int i = 1; i < history.Count; i++)
+                Dictionary<double, List<int>> densityHistories = new Dictionary<double, List<int>>();
+                Console.WriteLine($"Плотности для графика: {string.Join(", ", densityResults)}");
+                foreach (var density in densityResults)
                 {
-                    int x1 = margin + (i - 1) * (width - 2 * margin) / maxGen;
-                    int y1 = height - margin - history[i - 1] * (height - 2 * margin) / maxAlive;
-                    int x2 = margin + i * (width - 2 * margin) / maxGen;
-                    int y2 = height - margin - history[i] * (height - 2 * margin) / maxAlive;
-                    g.DrawLine(pen, x1, y1, x2, y2);
+                    string file = Path.Combine(GetProjectDirectory(), $"data_{density}.txt");
+                    if (File.Exists(file))
+                    {
+                        try
+                        {
+                            var lines = File.ReadAllLines(file).Skip(1);
+                            var history = lines.Select(line => int.Parse(line.Split('\t')[1])).ToList();
+                            densityHistories[density] = history;
+                            Console.WriteLine($"Плотность {density}: {history.Count} точек");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Ошибка при чтении файла {file}: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Файл {file} не найден");
+                    }
                 }
 
-                bmp.Save("plot.png", ImageFormat.Png);
+                int penIndex = 0;
+                foreach (var kvp in densityHistories)
+                {
+                    var history = kvp.Value;
+                    for (int i = 1; i < history.Count; i++)
+                    {
+                        int x1 = margin + (i - 1) * (width - 2 * margin) / maxGen;
+                        int y1 = height - margin - history[i - 1] * (height - 2 * margin) / maxAlive;
+                        int x2 = margin + i * (width - 2 * margin) / maxGen;
+                        int y2 = height - margin - history[i] * (height - 2 * margin) / maxAlive;
+                        g.DrawLine(pens[penIndex % pens.Length], x1, y1, x2, y2);
+                    }
+                    penIndex++;
+                }
+
+                for (int i = 0; i < densityHistories.Count; i++)
+                {
+                    g.DrawLine(pens[i % pens.Length], width - 150, 30 + i * 20, width - 100, 30 + i * 20);
+                    g.DrawString($"Плотность {densityResults[i]}", font, Brushes.Black, width - 90, 25 + i * 20);
+                }
+
+                try
+                {
+                    bmp.Save(plotPath, ImageFormat.Png);
+                    Console.WriteLine($"График успешно сохранен в {plotPath}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка сохранения графика в {plotPath}: {ex.Message}");
+                }
             }
         }
 
@@ -312,10 +420,44 @@ namespace cli_life
             board = new Board(config.width, config.height, config.cellSize, config.liveDensity);
             generation = 0;
             history.Clear();
-            File.WriteAllText("data.txt", "Generation\tAlive\n");
+            string dataFile = Path.Combine(GetProjectDirectory(), "data.txt");
+            File.WriteAllText(dataFile, "Generation\tAlive\n");
             InitializePatterns();
         }
 
+        static void RunSimulation(double density, int runNumber)
+        {
+            var config = LoadConfig("settings.json");
+            config.liveDensity = density;
+            board = new Board(config.width, config.height, config.cellSize, config.liveDensity);
+            generation = 0;
+            history.Clear();
+
+            string dataFile = Path.Combine(GetProjectDirectory(), $"data_{density}.txt");
+            Console.WriteLine($"Запись данных в {dataFile}");
+            if (runNumber == 1)
+                File.WriteAllText(dataFile, "Generation\tAlive\n");
+
+            while (generation < 500 && !IsStable())
+            {
+                Render();
+                int alive = CountAlive();
+                history.Add(alive);
+                File.AppendAllText(dataFile, $"{generation}\t{alive}\n");
+                board.Advance();
+                generation++;
+                Thread.Sleep(100);
+            }
+
+            string densityFile = Path.Combine(GetProjectDirectory(), $"density_{density}.txt");
+            File.AppendAllText(densityFile, $"{runNumber} - запуск: количество поколений: {generation}\n");
+            Console.WriteLine($"Плотность {density}, Запуск {runNumber}: Стабилизация на поколении {generation}");
+        }
+
+        static string GetProjectDirectory()
+        {
+            return @"C:\Users\HP\source\repos\mod-lab04-life\Life"; // Укажите свой путь
+        }
         static void Render()
         {
             Console.SetCursorPosition(0, 0);
@@ -328,36 +470,13 @@ namespace cli_life
                 }
                 Console.Write('\n');
             }
-            Console.WriteLine($"Generation: {generation}");
-            Console.WriteLine($"Alive: {CountAlive()}");
-            Console.WriteLine($"Clusters: {CountClusters()}");
+            Console.WriteLine($"Поколение: {generation}");
+            Console.WriteLine($"Живые клетки: {CountAlive()}");
+            Console.WriteLine($"Кластеры: {CountClusters()}");
             AnalyzePatterns();
             foreach (var kvp in patternCounts)
                 Console.WriteLine($"{kvp.Key}: {kvp.Value}");
-            Console.WriteLine("S - Save, L - Load, R - Reset, Q - Quit");
-        }
-
-        static void RunSimulation(double density)
-        {
-            var config = LoadConfig("settings.json");
-            config.liveDensity = density;
-            board = new Board(config.width, config.height, config.cellSize, config.liveDensity);
-            generation = 0;
-            history.Clear();
-            File.WriteAllText($"data_{density}.txt", "Generation\tAlive\n");
-
-            while (generation < 1000 && !IsStable())
-            {
-                Render();
-                int alive = CountAlive();
-                history.Add(alive);
-                File.AppendAllText($"data_{density}.txt", $"{generation}\t{alive}\n");
-                board.Advance();
-                generation++;
-                Thread.Sleep(100);
-            }
-            stableGenerations.Add(generation);
-            Console.WriteLine($"Плотность {density}: Стабилизация на поколении {generation}");
+            Console.WriteLine("S - Сохранить, L - Загрузить, R - Сбросить, Q - Выйти");
         }
 
         static void Main(string[] args)
@@ -365,50 +484,63 @@ namespace cli_life
             Console.CursorVisible = false;
             Reset();
 
-            // Исследование стабильности для разных плотностей
-            double[] densities = { 0.1, 0.3, 0.5, 0.7 };
-            foreach (var d in densities)
+            string patternsDir = Path.Combine(GetProjectDirectory(), "Patterns");
+            if (!Directory.Exists(patternsDir))
             {
-                Console.Clear();
-                Console.WriteLine($"Симуляция для плотности {d}");
-                RunSimulation(d);
-                densityResults.Add(d);
-                GeneratePlot(); // Сохраняем график для каждой плотности
-                Console.WriteLine("Нажмите любую клавишу для продолжения...");
-                Console.ReadKey();
+                Directory.CreateDirectory(patternsDir);
+                CreateDefaultPatternFiles(patternsDir);
             }
 
-            // Сохраняем последний график как основной
-            File.Copy($"data_{densities.Last()}.txt", "data.txt", true);
-            GeneratePlot();
+            double[] densities = { 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 };
+            const int runsPerDensity = 5;
 
-            // Загрузка и тестирование фигур
-            string[] patternFiles = { "glider.txt", "blinker.txt", "beehive.txt" };
-            foreach (var file in patternFiles)
+            densityResults.Clear(); // Очищаем перед началом
+            foreach (var density in densities)
             {
-                if (File.Exists(file))
+                string densityFile = Path.Combine(GetProjectDirectory(), $"density_{density}.txt");
+                File.WriteAllText(densityFile, "");
+
+                List<int> generations = new List<int>();
+                for (int run = 1; run <= runsPerDensity; run++)
                 {
                     Console.Clear();
-                    Console.WriteLine($"Тестирование фигуры из {file}");
-                    Reset();
-                    LoadState(file);
-                    int maxGen = 100;
-                    for (int i = 0; i < maxGen && !IsStable(); i++)
-                    {
-                        Render();
-                        int alive = CountAlive();
-                        history.Add(alive);
-                        File.AppendAllText("data.txt", $"{generation}\t{alive}\n");
-                        board.Advance();
-                        generation++;
-                        Thread.Sleep(200);
-                    }
-                    Console.WriteLine("Нажмите любую клавишу для продолжения...");
-                    Console.ReadKey();
+                    Console.WriteLine($"Симуляция для плотности {density}, Запуск {run}");
+                    densityResults.Add(density); // Добавляем плотность
+                    RunSimulation(density, run);
+                    generations.Add(generation);
                 }
+                double avgGenerations = generations.Average();
+                File.AppendAllText(densityFile, $"Среднее количество поколений: {avgGenerations}\n");
             }
 
-            // Основной интерактивный цикл
+            Console.WriteLine($"Плотности для графика: {string.Join(", ", densityResults)}");
+            GeneratePlot();
+
+            //string[] patternFiles = { "Patterns/block.txt", "Patterns/ellipse.txt", "Patterns/glider.txt", "Patterns/blinker.txt", "Patterns/beehive.txt" };
+            //foreach (var file in patternFiles)
+            //{
+            //    string fullPath = Path.Combine(GetProjectDirectory(), file);
+            //    if (File.Exists(fullPath))
+            //    {
+            //        Console.Clear();
+            //        Console.WriteLine($"Тестирование фигуры из {file}");
+            //        Reset();
+            //        LoadState(file);
+            //        int maxGen = 100;
+            //        for (int i = 0; i < maxGen && !IsStable(); i++)
+            //        {
+            //            Render();
+            //            int alive = CountAlive();
+            //            history.Add(alive);
+            //            string dataFile = Path.Combine(GetProjectDirectory(), "data.txt");
+            //            File.AppendAllText(dataFile, $"{generation}\t{alive}\n");
+            //            board.Advance();
+            //            generation++;
+            //            Thread.Sleep(200);
+            //        }
+            //    }
+            //}
+
             Console.Clear();
             Reset();
             while (true)
@@ -428,7 +560,8 @@ namespace cli_life
 
                 Render();
                 int alive = CountAlive();
-                File.AppendAllText("data.txt", $"{generation}\t{alive}\n");
+                string dataFile = Path.Combine(GetProjectDirectory(), "data.txt");
+                File.AppendAllText(dataFile, $"{generation}\t{alive}\n");
 
                 history.Add(alive);
                 if (IsStable())
